@@ -228,8 +228,8 @@ async function criarGrupoVip(sock, aceitante, remetente) {
 }
 
 // ============================================
-// 📩 HANDLER: #chamar
-// Etapa 1: Lucas chama Mary → bot pede #salvei de Lucas
+// 📩 HANDLER: #chm
+// Etapa 1: Remetente chama alguém → bot pede #sv do remetente
 // ============================================
 export async function chamarHandler(sock, message, grupo) {
     await sock.sendMessage(grupo, { delete: message.key });
@@ -248,7 +248,7 @@ export async function chamarHandler(sock, message, grupo) {
 
     if (mencionados.length === 0) {
         await sock.sendMessage(grupo, {
-            text: `⚠️ Marque alguém para convidar! Ex: *#chamar @maria*\n\n${RODAPE}`,
+            text: `⚠️ Marque alguém para convidar! Ex: *#chm @maria*\n\n${RODAPE}`,
         });
         return true;
     }
@@ -280,28 +280,28 @@ export async function chamarHandler(sock, message, grupo) {
 
     const botNumero = sock.user.id.split(':')[0];
 
-    // Salva convite no banco na etapa inicial: aguardando remetente (#salvei)
+    // Salva convite no banco na etapa inicial: aguardando_remetente (#sv)
     await query(
         `INSERT INTO convites_pendentes
             (convidado, remetente, nome_remetente, grupo, expires_at, etapa)
-         VALUES ($1, $2, $3, $4, NOW() + INTERVAL '2 minutes', 'aguardando_remetente')`,
+         VALUES ($1, $2, $3, $4, NOW() + INTERVAL '3 minutes', 'aguardando_remetente')`,
         [convidado, remetente, nomeRemetente, grupo]
     );
 
-    // Pede #salvei do REMETENTE
+    // Pede #sv do REMETENTE
     const caption =
         `💌 *CONVITE SALA VIP* 💌\n\n` +
-        `@${remetente.split('@')[0]}, para continuar você precisa ter o número do bot salvo.\n\n` +
-        `📱 O número do bot é *${botNumero}*.\n` +
-        `Salve-o agora e escreva *#salvei* aqui no grupo.\n\n` +
-        `⚠️ Se não confirmar em *2 minutos*, o convite será cancelado automaticamente.\n\n` +
+        `@${remetente.split('@')[0]}, 𝐏𝐀𝐑𝐀 𝐂𝐎𝐍𝐓𝐈𝐍𝐔𝐀𝐑 𝐕𝐎𝐂𝐄̂ 𝐏𝐑𝐄𝐂𝐈𝐒𝐀 𝐓𝐄𝐑 𝐎 𝐌𝐄𝐔 𝐍𝐔́𝐌𝐄𝐑𝐎 𝐒𝐀𝐋𝐕𝐎 𝐍𝐎 𝐒𝐄𝐔 𝐖𝐇𝐀𝐓𝐒𝐀𝐏𝐏. 📱\n\n` +
+        `📲 𝗢 𝗺𝗲𝘂 𝗻𝘂́𝗺𝗲𝗿𝗼 𝗲́ *${botNumero}*.\n` +
+        `Salve-o agora e escreva *#sv* aqui no grupo.\n\n` +
+        `⚠️ Se não confirmar em *3 minutos*, o convite será cancelado automaticamente.\n\n` +
         `${RODAPE}`;
 
     await enviarComImagem(sock, grupo, caption, [remetente]);
 
-    console.log(`💌 [#chamar] ${nomeRemetente} → ${convidado.split('@')[0]} | aguardando #salvei do remetente`);
+    console.log(`💌 [#chm] ${nomeRemetente} → ${convidado.split('@')[0]} | aguardando #sv do remetente`);
 
-    // Timer de expiração (2 min)
+    // Timer de expiração (3 min)
     setTimeout(async () => {
         try {
             const check = await query(
@@ -325,7 +325,7 @@ export async function chamarHandler(sock, message, grupo) {
                     `⌛ *CONVITE EXPIRADO* ❌\n\n` +
                     `@${remetente.split('@')[0]}, seu convite para @${convidado.split('@')[0]} foi *cancelado automaticamente*.\n\n` +
                     `😔 O tempo acabou antes da confirmação.\n\n` +
-                    `💡 Se ainda quiser tentar, use *#chamar @pessoa* novamente!\n\n` +
+                    `💡 Se ainda quiser tentar, use *#chm @pessoa* novamente!\n\n` +
                     `${RODAPE}`,
                 mentions: [remetente, convidado],
             });
@@ -333,15 +333,15 @@ export async function chamarHandler(sock, message, grupo) {
         } catch (e) {
             console.error('❌ Erro ao expirar convite:', e.message);
         }
-    }, 2 * 60 * 1000);
+    }, 3 * 60 * 1000);
 
     return true;
 }
 
 // ============================================
-// 💾 HANDLER: #salvei
-// Etapa 2 (remetente): Lucas confirma → bot avisa Mary
-// Etapa 3 (convidado): Mary confirma → sala criada direto
+// 💾 HANDLER: #sv
+// Etapa 2 (remetente): confirma → bot pede #ok do remetente
+// Etapa 3 (convidado): confirma → bot pede #ok do convidado
 // ============================================
 export async function salveiHandler(sock, message, grupo) {
     await sock.sendMessage(grupo, { delete: message.key });
@@ -351,6 +351,7 @@ export async function salveiHandler(sock, message, grupo) {
 
     const autor        = garantirJidCompleto(await resolverJidViaGrupo(sock, autorRaw, grupo));
     const digitosAutor = autor.replace(/\D/g, '');
+    const botNumero    = sock.user.id.split(':')[0];
 
     // ── Verifica se é o REMETENTE confirmando (etapa: aguardando_remetente) ──
     const resRemetente = await query(
@@ -362,29 +363,26 @@ export async function salveiHandler(sock, message, grupo) {
     );
 
     if (resRemetente.rowCount > 0) {
-        const convite      = resRemetente.rows[0];
-        const convidadoJid = garantirJidCompleto(convite.convidado);
-        const botNumero    = sock.user.id.split(':')[0];
+        const convite = resRemetente.rows[0];
 
-        // Avança etapa para aguardando_convidado
+        // Avança para etapa de confirmação do REMETENTE
         await query(
-            `UPDATE convites_pendentes SET etapa = 'aguardando_convidado' WHERE id = $1`,
+            `UPDATE convites_pendentes SET etapa = 'aguardando_confirmacao_remetente' WHERE id = $1`,
             [convite.id]
         );
 
-        // Avisa o CONVIDADO
+        // Pede #ok ao REMETENTE antes de notificar o convidado
         const caption =
-            `💌 *CONVITE SALA VIP* 💌\n\n` +
-            `@${convidadoJid.split('@')[0]}, @${autor.split('@')[0]} quer conversar com você na *Sala VIP*! 💎\n\n` +
-            `A sala só será criada se você salvar o número do bot.\n\n` +
-            `📱 Salve o número *${botNumero}* e escreva *#salvei* aqui no grupo.\n\n` +
-            `❌ Se não quiser ir, escreva *#recusar* — ninguém no grupo ficará sabendo.\n\n` +
-            `⚠️ Se não responder, o convite expira em breve.\n\n` +
+            `✋ *ATENÇÃO* , @${autor.split('@')[0]}\n\n` +
+            `*Você tem certeza que salvou o meu número no seu WhatsApp* ❓\n\n` +
+            `📱 Meu número é *${botNumero}*.\n\n` +
+            `*Preciso que você me salve para conseguir te adicionar na SALA*\n\n` +
+            `✅ Se já salvou, escreva *#ok* para continuar!\n\n` +
             `${RODAPE}`;
 
-        await enviarComImagem(sock, grupo, caption, [convidadoJid, autor]);
+        await enviarComImagem(sock, grupo, caption, [autor]);
 
-        console.log(`💾 [#salvei] Remetente ${autor.split('@')[0]} confirmou → aguardando convidado ${convidadoJid.split('@')[0]}`);
+        console.log(`💾 [#sv] Remetente ${autor.split('@')[0]} enviou #sv → aguardando #ok do remetente`);
         return true;
     }
 
@@ -398,14 +396,106 @@ export async function salveiHandler(sock, message, grupo) {
     );
 
     if (resConvidado.rowCount > 0) {
+        const convite = resConvidado.rows[0];
+
+        // Avança para etapa de confirmação do CONVIDADO
+        await query(
+            `UPDATE convites_pendentes SET etapa = 'aguardando_confirmacao' WHERE id = $1`,
+            [convite.id]
+        );
+
+        // Pede #ok ao CONVIDADO
+        const caption =
+            `✋ *ATENÇÃO, @${autor.split('@')[0]}*\n\n` +
+            `*Você tem certeza que salvou o meu número no seu WhatsApp* ❓\n\n` +
+            `📱 Meu número é *${botNumero}*.\n\n` +
+            `*Preciso que você me salve para conseguir te adicionar na *SALA VIP* 💎👑\n\n` +
+            `✅ Se já salvou, escreva *#ok* para eu criar a sala agora!\n\n` +
+            `${RODAPE}`;
+
+        await enviarComImagem(sock, grupo, caption, [autor]);
+
+        console.log(`🔔 [#sv] Convidado ${autor.split('@')[0]} enviou #sv → aguardando #ok do convidado`);
+        return true;
+    }
+
+    // Nenhum convite ativo encontrado
+    await sock.sendMessage(grupo, {
+        text: `❌ @${autor.split('@')[0]}, você não tem nenhum convite ativo no momento.\n\n${RODAPE}`,
+        mentions: [autor],
+    });
+
+    return true;
+}
+
+// ============================================
+// ✅ HANDLER: #ok
+// Etapa 3 (remetente): confirma salvou → bot notifica convidado
+// Etapa 4 (convidado): confirma salvou → sala VIP criada
+// ============================================
+export async function confirmarHandler(sock, message, grupo) {
+    await sock.sendMessage(grupo, { delete: message.key });
+
+    const autorRaw = message.key.participant;
+    if (!autorRaw) return true;
+
+    const autor        = garantirJidCompleto(await resolverJidViaGrupo(sock, autorRaw, grupo));
+    const digitosAutor = autor.replace(/\D/g, '');
+    const botNumero    = sock.user.id.split(':')[0];
+
+    // ── Verifica se é o REMETENTE confirmando (etapa: aguardando_confirmacao_remetente) ──
+    const resRemetente = await query(
+        `SELECT * FROM convites_pendentes
+         WHERE REGEXP_REPLACE(remetente, '[^0-9]', '', 'g') = $1
+           AND expires_at > NOW()
+           AND etapa = 'aguardando_confirmacao_remetente'`,
+        [digitosAutor]
+    );
+
+    if (resRemetente.rowCount > 0) {
+        const convite      = resRemetente.rows[0];
+        const convidadoJid = garantirJidCompleto(convite.convidado);
+
+        // Avança etapa para aguardando_convidado
+        await query(
+            `UPDATE convites_pendentes SET etapa = 'aguardando_convidado' WHERE id = $1`,
+            [convite.id]
+        );
+
+        // Avisa o CONVIDADO para salvar o número e enviar #sv
+        const caption =
+            `💌 *CONVITE SALA VIP* 💌\n\n` +
+            `@${convidadoJid.split('@')[0]}, @${autor.split('@')[0]} 𝗤𝗨𝗘𝗥 𝗖𝗢𝗡𝗩𝗘𝗥𝗦𝗔𝗥 𝗖𝗢𝗠 𝗩𝗢𝗖𝗘̂ 𝗡𝗔 𝗦𝗔𝗟𝗔 𝗩𝗜𝗣! 💎\n\n` +
+            `*A sala só será criada se você SALVAR meu número no seu WhatsApp.* 📱✅\n\n` +
+            `📱 Salve o número *${botNumero}* e escreva *#sv* aqui no grupo.\n\n` +
+            `❌ Se não quiser ir, escreva *#rec* \nNinguém no grupo ficará sabendo.\n\n` +
+            `⚠️ 𝗦𝗲 𝗻𝗮̃𝗼 𝗿𝗲𝘀𝗽𝗼𝗻𝗱𝗲𝗿, 𝗼 𝗰𝗼𝗻𝘃𝗶𝘁𝗲 𝗲𝘅𝗽𝗶𝗿𝗮 𝗲𝗺 𝗯𝗿𝗲𝘃𝗲.\n\n` +
+            `${RODAPE}`;
+
+        await enviarComImagem(sock, grupo, caption, [convidadoJid, autor]);
+
+        console.log(`✅ [#ok] Remetente ${autor.split('@')[0]} confirmou → notificando convidado ${convidadoJid.split('@')[0]}`);
+        return true;
+    }
+
+    // ── Verifica se é o CONVIDADO confirmando (etapa: aguardando_confirmacao) ──
+    const resConvidado = await query(
+        `SELECT * FROM convites_pendentes
+         WHERE REGEXP_REPLACE(convidado, '[^0-9]', '', 'g') = $1
+           AND expires_at > NOW()
+           AND etapa = 'aguardando_confirmacao'`,
+        [digitosAutor]
+    );
+
+    if (resConvidado.rowCount > 0) {
         const convite      = resConvidado.rows[0];
         const remetenteJid = garantirJidCompleto(convite.remetente);
 
         // Remove convite do banco
         await query(`DELETE FROM convites_pendentes WHERE id = $1`, [convite.id]);
-        console.log(`🗑️ [#salvei] Convite removido do banco: ${convite.id}`);
+        console.log(`🗑️ [#ok] Convite removido do banco: ${convite.id}`);
 
-        // Cria sala direto
+        // Cria sala VIP
         const salaVipId = await criarGrupoVip(sock, autor, remetenteJid);
 
         if (!salaVipId) {
@@ -423,13 +513,13 @@ export async function salveiHandler(sock, message, grupo) {
             mentions: [autor, remetenteJid],
         });
 
-        console.log(`✅ [#salvei] Sala criada: ${autor.split('@')[0]} + ${remetenteJid.split('@')[0]} | ${salaVipId}`);
+        console.log(`✅ [#ok] Sala criada: ${autor.split('@')[0]} + ${remetenteJid.split('@')[0]} | ${salaVipId}`);
         return true;
     }
 
-    // Nenhum convite ativo encontrado
+    // Nenhuma confirmação pendente encontrada
     await sock.sendMessage(grupo, {
-        text: `❌ @${autor.split('@')[0]}, você não tem nenhum convite ativo no momento.\n\n${RODAPE}`,
+        text: `❌ @${autor.split('@')[0]}, você não tem nenhuma confirmação pendente no momento.\n\n${RODAPE}`,
         mentions: [autor],
     });
 
@@ -437,7 +527,7 @@ export async function salveiHandler(sock, message, grupo) {
 }
 
 // ============================================
-// ❌ HANDLER: #recusar
+// ❌ HANDLER: #rec
 // Convidado recusa → mensagens discretas no PV para ambos
 // ============================================
 export async function recusarHandler(sock, message, grupo) {
@@ -453,12 +543,12 @@ export async function recusarHandler(sock, message, grupo) {
 
     console.log(`🔍 [DEBUG] recusante → ${recusante}`);
 
-    // Só o convidado pode recusar (etapa: aguardando_convidado)
+    // Convidado pode recusar nas etapas: aguardando_convidado OU aguardando_confirmacao
     const res = await query(
         `SELECT * FROM convites_pendentes
          WHERE REGEXP_REPLACE(convidado, '[^0-9]', '', 'g') = $1
            AND expires_at > NOW()
-           AND etapa = 'aguardando_convidado'`,
+           AND etapa IN ('aguardando_convidado', 'aguardando_confirmacao')`,
         [digitos]
     );
 
@@ -468,7 +558,7 @@ export async function recusarHandler(sock, message, grupo) {
                 text: `❌ Você não tem nenhum convite pendente ou ele já expirou.\n\n${RODAPE}`,
             });
         } catch (e) {
-            console.warn('⚠️ [#recusar] Não foi possível avisar recusante no privado:', e.message);
+            console.warn('⚠️ [#rec] Não foi possível avisar recusante no privado:', e.message);
         }
         return true;
     }
@@ -489,7 +579,7 @@ export async function recusarHandler(sock, message, grupo) {
             mentions: [recusante],
         });
     } catch (e) {
-        console.warn('⚠️ [#recusar] Não foi possível notificar remetente no privado:', e.message);
+        console.warn('⚠️ [#rec] Não foi possível notificar remetente no privado:', e.message);
     }
 
     // Confirma para o recusante no PV
@@ -502,10 +592,10 @@ export async function recusarHandler(sock, message, grupo) {
             mentions: [remetenteJid],
         });
     } catch (e) {
-        console.warn('⚠️ [#recusar] Não foi possível confirmar recusa no privado:', e.message);
+        console.warn('⚠️ [#rec] Não foi possível confirmar recusa no privado:', e.message);
     }
 
-    console.log(`❌ [#recusar] ${recusante.split('@')[0]} recusou convite de ${remetenteJid.split('@')[0]}`);
+    console.log(`❌ [#rec] ${recusante.split('@')[0]} recusou convite de ${remetenteJid.split('@')[0]}`);
     return true;
 }
 
@@ -555,11 +645,13 @@ export async function vipHandler(sock, message, grupo) {
         `🚫 Não chame no PV sem permissão: alguns chamam sem avisar e outros ficam com vergonha no grupo.\n\n` +
         `✨ *Pensando nisso criamos a SALA VIP!* ✨\n\n` +
         `📌 *Como usar:*\n` +
-        `👉 Quem quer chamar escreve: *#chamar @pessoa*\n` +
-        `👉 O bot pede que você salve o número dele e escreva *#salvei*\n` +
-        `👉 O bot avisará a pessoa convidada, que também salva o número e escreve *#salvei*\n` +
+        `👉 Quem quer chamar escreve: *#chm @pessoa*\n` +
+        `👉 O bot pede que você salve o número dele e escreva *#sv*\n` +
+        `👉 O bot pede uma confirmação com *#ok*\n` +
+        `👉 O bot avisará a pessoa convidada, que também salva o número e escreve *#sv*\n` +
+        `👉 O bot pedirá uma confirmação final com *#ok*\n` +
         `👉 Sala criada automaticamente! 🎉\n\n` +
-        `❌ Se a pessoa convidada não quiser, ela escreve *#recusar*\n\n` +
+        `❌ Se a pessoa convidada não quiser, ela escreve *#rec*\n\n` +
         `⚠️ *Importante:*\n` +
         `📲 Ambos precisam salvar o número do bot\n` +
         `👥 Só entram os dois\n` +
@@ -580,10 +672,11 @@ export async function vipHandler(sock, message, grupo) {
 export async function handleChamarCommand(sock, message, content, from) {
     const lower = content.toLowerCase().trim();
 
-    if (lower.startsWith('#chamar')) return await chamarHandler(sock, message, from);
-    if (lower === '#salvei')         return await salveiHandler(sock, message, from);
-    if (lower === '#recusar')        return await recusarHandler(sock, message, from);
-    if (lower === '#vip')            return await vipHandler(sock, message, from);
+    if (lower.startsWith('#chm'))  return await chamarHandler(sock, message, from);
+    if (lower === '#sv')           return await salveiHandler(sock, message, from);
+    if (lower === '#ok')           return await confirmarHandler(sock, message, from);
+    if (lower === '#rec')          return await recusarHandler(sock, message, from);
+    if (lower === '#vip')          return await vipHandler(sock, message, from);
 
     return false;
 }

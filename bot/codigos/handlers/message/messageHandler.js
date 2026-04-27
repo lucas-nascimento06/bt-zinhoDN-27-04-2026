@@ -278,7 +278,7 @@ export async function handleMessages(sock, message) {
     }
 
     // ============================================
-    // ✅ #chamar, #aceitar e #vip
+    // ✅ #chm, #ok e #vip
     // ============================================
     if (from.endsWith('@g.us')) {
       const chamarHandled = await handleChamarCommand(sock, message, content, from);

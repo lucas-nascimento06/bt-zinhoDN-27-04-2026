@@ -186,23 +186,19 @@ async function gerarThumbnail(buffer, size = 256) {
     }
 }
 
+// ── CORREÇÃO: igual ao baixarImagemPoema do poemas que funciona ──────────────
 async function baixarImagemPoster() {
     const posterUrl = POSTER_URLS[Math.floor(Math.random() * POSTER_URLS.length)];
 
     try {
         console.log('🖼️ Baixando poster de perfil...');
-        const response = await axios.get(posterUrl, {
-            responseType: 'arraybuffer',
-            timeout: 10000,
-            headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'image/*' },
-            maxRedirects: 5
-        });
+        const response = await axios.get(posterUrl, { responseType: 'arraybuffer' });
+
         let buffer = Buffer.from(response.data, 'binary');
         if (buffer.length < 1000) return null;
+
         console.log(`✅ Poster baixado: ${buffer.length} bytes`);
-
         buffer = await adicionarTituloNoPoster(buffer);
-
         return buffer;
     } catch (err) {
         console.error('❌ Erro ao baixar poster:', err.message);
@@ -249,25 +245,13 @@ async function processarPerfil(sock, from, senderId, mentionedJids, nomeExibicao
     const jidAlvo = mentionedJids.length > 0 ? mentionedJids[0] : senderId;
 
     // ── Resolver nome de exibição (usado APENAS no texto) ─────────────────
-    // Prioridade: 1) nomeExibicao digitado pelo usuário (ex: "maria")
-    //             2) número extraído do JID quando é um JID normal
-    //             3) número do remetente quando é perfil próprio
-    //
-    // NUNCA usa o JID cru no texto — isso evita "@12036340729997410" quando
-    // o contato tem um LID (número interno do WhatsApp).
     let nomeParaTexto;
     if (nomeExibicao) {
-        // Usuário digitou @maria → usamos "maria"
         nomeParaTexto = nomeExibicao;
     } else if (mentionedJids.length > 0) {
-        // Menção sem nome digitado: tenta extrair número legível do JID.
-        // Se for LID (ex: 12036340729997410@lid), vai cair no nomeExibicao
-        // que já foi extraído pelo parsearComando — mas como nomeExibicao é
-        // null aqui, usamos o número do JID como fallback controlado.
         const jidNum = jidAlvo.split('@')[0];
         nomeParaTexto = jidNum;
     } else {
-        // Perfil próprio
         nomeParaTexto = numeroRemetente;
     }
 
@@ -286,7 +270,6 @@ async function processarPerfil(sock, from, senderId, mentionedJids, nomeExibicao
     try {
         console.log(`👤 [PERFIL] Gerando perfil para: ${nomeParaTexto} | JID: ${jidAlvo} | pedido por ${nomeQuemPediu}`);
 
-        // Passa o nome de exibição para o texto — JID fica só em mentions[]
         const perfilCompleto = montarPerfil(nomeParaTexto);
 
         // ── Tentar enviar com poster + título ─────────────────────────────
