@@ -20,6 +20,7 @@ import { handleReloadConfig, handleDedicatoriaCommands } from '../musica/dedicat
 import { handleBanMessage } from '../../moderation/banHandler.js'; 
 import { handleNotCommand } from '../command/notCommandHandler.js';
 import { handleChamarCommand } from '../command/chamarHandler.js';
+import { golpeHandler } from '../command/golpeHandler.js';
 import { perfilHandler } from "../command/perfilHandler.js";
 import {
     handleBomDia,
@@ -236,6 +237,15 @@ export async function handleMessages(sock, message) {
       return;
     }
 
+    // ============================================
+    // 💘 GOLPE — ✅ CORRIGIDO: startsWith em vez de ===
+    // ============================================
+    if (lowerContent.startsWith('#golpe')) {
+      if (DEBUG_MODE) console.log('💘 Comando #golpe detectado!');
+      await golpeHandler(sock, message, from);
+      return;
+    }
+
     // 🎙️ Dedicatória musical (#play música @pessoa)
     if (lowerContent.startsWith('#play')) {
       const dedicatoriaHandled = await handleDedicatoriaCommands(sock, message, from);
@@ -290,8 +300,6 @@ export async function handleMessages(sock, message) {
     // ============================================
     if (from.endsWith('@g.us')) {
 
-      // ✅ _getMeta permanece apenas para #ativos e #inativos,
-      //    que ainda precisam de admList no messageHandler.
       const _getMeta = async () => {
         const meta      = await sock.groupMetadata(from);
         const admList   = meta.participants.filter(p => p.admin).map(p => p.id);
@@ -318,10 +326,6 @@ export async function handleMessages(sock, message) {
         return;
       }
 
-      // ✅ CORRIGIDO: delega TUDO ao handler — sem lógica duplicada aqui.
-      //    rankdamasHandler(client, message) é auto-suficiente:
-      //    busca metadata, verifica admin, gera ranking, cobra inativos
-      //    e fecha o dia — tudo internamente, uma única vez.
       if (lowerContent === '#rankdamas') {
         if (DEBUG_MODE) console.log('🏆 Comando #rankdamas detectado');
         await rankdamasHandler(sock, message);
