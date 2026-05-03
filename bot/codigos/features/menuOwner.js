@@ -155,7 +155,7 @@ export function getOwnerMenu() {
 ╔═══════════════════════════
 ║ 🎵 *RECURSOS EXTRAS*
 ╠═══════════════════════════
-║ 🎨 *#stickerdamas*
+║ 🎨 *#stk*
 ║ → Criar stickers personalizados
 ║ → Envie imagem/vídeo com o comando
 ║

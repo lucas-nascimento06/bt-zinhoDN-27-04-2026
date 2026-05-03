@@ -1,5 +1,10 @@
 // ============================================================
 //  rainhaModel.js  →  bot/codigos/data/rainhaModel.js
+//  ✅ VERSÃO CORRIGIDA
+//  - extrairNumeroLimpo() strip :N e @ (device suffix do Baileys)
+//  - getFantasmas retorna resolvedId sempre limpo via extrairNumeroLimpo()
+//  - getInativosComDias, fecharDia usam extrairNumeroLimpo()
+//  - fecharDia idempotente via tabela dias_fechados
 // ============================================================
 
 import pool from '../../../db.js';
@@ -10,11 +15,18 @@ import pool from '../../../db.js';
 const BOT_NUMBER = '5511997869449';
 
 // ============================================
-// 🔧 UTILITÁRIO
+// 🔧 UTILITÁRIOS
 // ============================================
+
+/**
+ * Remove device suffix (:N) e domínio (@...) do JID, retorna só dígitos.
+ * Ex: "5585999123456:5@s.whatsapp.net" → "5585999123456"
+ *     "5585999123456@s.whatsapp.net"   → "5585999123456"
+ *     "5585999123456"                   → "5585999123456"
+ */
 function extrairNumeroLimpo(rawId) {
   if (!rawId) return null;
-  const semSufixo     = rawId.replace(/@.*$/, '');
+  const semSufixo     = rawId.replace(/[:@].*$/, '');
   const apenasDigitos = semSufixo.replace(/\D/g, '');
   if (apenasDigitos.length < 10) return null;
   return apenasDigitos;
@@ -47,6 +59,15 @@ export async function initDB() {
     CREATE INDEX IF NOT EXISTS idx_mg_grupo
       ON mensagens_grupo (grupo_id);
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS dias_fechados (
+      grupo_id TEXT NOT NULL,
+      data     DATE NOT NULL,
+      PRIMARY KEY (grupo_id, data)
+    );
+  `);
+
   console.log('🗄️ Tabelas verificadas/criadas.');
 }
 
@@ -123,10 +144,17 @@ export async function getFantasmas(grupoId, membrosResolvidos, adminNums = []) {
   const conhecidos = new Set(res.rows.map(r => r.usuario_id));
   const ignorados  = new Set([BOT_NUMBER, ...adminNums]);
 
-  const fantasmas = membrosResolvidos.filter(m => {
-    const num = m.resolvedId.replace(/@.*$/, '');
-    return !conhecidos.has(num) && !ignorados.has(num);
-  });
+  // ✅ Filtra E já retorna resolvedId sempre limpo via extrairNumeroLimpo
+  const fantasmas = membrosResolvidos
+    .filter(m => {
+      const num = extrairNumeroLimpo(m.resolvedId);
+      if (!num) return false;
+      return !conhecidos.has(num) && !ignorados.has(num);
+    })
+    .map(m => ({
+      ...m,
+      resolvedId: extrairNumeroLimpo(m.resolvedId), // ✅ garante número limpo no retorno
+    }));
 
   return { fantasmas };
 }
@@ -143,7 +171,9 @@ export async function getInativosComDias(grupoId, membrosResolvidos, adminNums =
   );
 
   const bancoPorNumero = {};
-  res.rows.forEach(r => { bancoPorNumero[r.usuario_id] = { dias: r.dias_inativo, nome: r.nome }; });
+  res.rows.forEach(r => {
+    bancoPorNumero[r.usuario_id] = { dias: r.dias_inativo, nome: r.nome };
+  });
 
   const ativosHoje = new Set(
     (await getAtivos(grupoId)).map(u => u.usuario_id)
@@ -153,26 +183,40 @@ export async function getInativosComDias(grupoId, membrosResolvidos, adminNums =
 
   return membrosResolvidos
     .filter(m => {
-      const num = m.resolvedId.replace(/@.*$/, '');
+      const num = extrairNumeroLimpo(m.resolvedId);
+      if (!num) return false;
       return !ativosHoje.has(num) && !ignorados.has(num) && num in bancoPorNumero;
     })
     .map(m => {
-      const num         = m.resolvedId.replace(/@.*$/, "");
+      const num         = extrairNumeroLimpo(m.resolvedId);
       const diasInativo = bancoPorNumero[num].dias + 1;
       const nome        = bancoPorNumero[num].nome || null;
-      return { ...m, diasInativo, nome };
+      return { ...m, resolvedId: num, diasInativo, nome };
     })
     .sort((a, b) => b.diasInativo - a.diasInativo);
 }
 
 // ============================================
 // 🔄 FECHAR DIA
+// ✅ Idempotente: se já fechou hoje, não faz nada.
 // ============================================
 export async function fecharDia(grupoId, membrosResolvidos, adminNums = []) {
   const hoje = dataHojeBrasilia();
 
+  const jaFechou = await pool.query(
+    `SELECT 1 FROM dias_fechados WHERE grupo_id = $1 AND data = $2`,
+    [grupoId, hoje]
+  );
+  if (jaFechou.rows.length > 0) {
+    console.log(`⏭️ [rainhaModel] Dia ${hoje} já fechado para ${grupoId}, pulando.`);
+    return;
+  }
+
+  // ─── Remove do banco quem saiu do grupo ───────────────
   const numerosNoGrupo = new Set(
-    membrosResolvidos.map(m => m.resolvedId.replace(/@.*$/, ''))
+    membrosResolvidos
+      .map(m => extrairNumeroLimpo(m.resolvedId))
+      .filter(Boolean)
   );
 
   const todosNoBanco = await pool.query(
@@ -191,18 +235,20 @@ export async function fecharDia(grupoId, membrosResolvidos, adminNums = []) {
           AND usuario_id = ANY($2)`,
       [grupoId, sairamDoGrupo]
     );
-    console.log(`🚪 [rainhaModel] ${sairamDoGrupo.length} membro(s) removido(s) do banco por ter saído do grupo.`);
+    console.log(`🚪 [rainhaModel] ${sairamDoGrupo.length} membro(s) removido(s) por ter saído do grupo.`);
   }
 
+  // ─── Quem falou hoje ──────────────────────────────────
   const ativosHoje = new Set(
     (await getAtivos(grupoId)).map(u => u.usuario_id)
   );
 
   const ignorados = new Set([BOT_NUMBER, ...adminNums]);
 
+  // ─── Incrementa dias_inativo de quem NÃO falou hoje ──
   const inativosNums = membrosResolvidos
-    .map(m => m.resolvedId.replace(/@.*$/, ''))
-    .filter(num => !ativosHoje.has(num) && !ignorados.has(num));
+    .map(m => extrairNumeroLimpo(m.resolvedId))
+    .filter(num => num && !ativosHoje.has(num) && !ignorados.has(num));
 
   if (inativosNums.length) {
     await pool.query(
@@ -212,8 +258,10 @@ export async function fecharDia(grupoId, membrosResolvidos, adminNums = []) {
           AND usuario_id = ANY($2)`,
       [grupoId, inativosNums]
     );
+    console.log(`😴 [rainhaModel] ${inativosNums.length} inativo(s) incrementado(s).`);
   }
 
+  // ─── Zera dias_inativo de quem falou hoje ─────────────
   const ativosArray = [...ativosHoje];
   if (ativosArray.length) {
     await pool.query(
@@ -225,6 +273,7 @@ export async function fecharDia(grupoId, membrosResolvidos, adminNums = []) {
     );
   }
 
+  // ─── Zera contagem de mensagens do dia ────────────────
   await pool.query(
     `UPDATE mensagens_grupo
         SET quantidade = 0
@@ -234,6 +283,7 @@ export async function fecharDia(grupoId, membrosResolvidos, adminNums = []) {
     [grupoId, hoje]
   );
 
+  // ─── Remove quem está inativo há 5+ dias ──────────────
   await pool.query(
     `DELETE FROM mensagens_grupo
       WHERE grupo_id = $1
@@ -241,5 +291,13 @@ export async function fecharDia(grupoId, membrosResolvidos, adminNums = []) {
     [grupoId]
   );
 
-  console.log(`🔄 [rainhaModel] Dia fechado para grupo ${grupoId}`);
+  // ─── Marca o dia como fechado ─────────────────────────
+  await pool.query(
+    `INSERT INTO dias_fechados (grupo_id, data)
+     VALUES ($1, $2)
+     ON CONFLICT DO NOTHING`,
+    [grupoId, hoje]
+  );
+
+  console.log(`✅ [rainhaModel] Dia ${hoje} fechado para grupo ${grupoId}.`);
 }

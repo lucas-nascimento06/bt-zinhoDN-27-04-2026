@@ -21,7 +21,6 @@ import { handleBanMessage } from '../../moderation/banHandler.js';
 import { handleNotCommand } from '../command/notCommandHandler.js';
 import { handleChamarCommand } from '../command/chamarHandler.js';
 import { golpeHandler } from '../command/golpeHandler.js';
-// ✅ CORRIGIDO: importar atualizarPerfilHandler também
 import { perfilHandler, atualizarPerfilHandler } from "../command/perfilHandler.js";
 import {
     handleBomDia,
@@ -43,7 +42,7 @@ const replyTag = new ReplyTagHandler();
 const OWNER_NUMBERS = ['5516981874405', '5521972337640'];
 const DEBUG_MODE = process.env.DEBUG === 'true';
 
-const GRUPO_PRINCIPAL = '120363419322682521@g.us';
+const GRUPO_PRINCIPAL = '120363408254551292@g.us';
 
 const MEDIA_TYPES = [
   'imageMessage',
@@ -79,14 +78,23 @@ function getMessageUniqueId(messageKey) {
 
 function resolverRemetenteReal(message) {
   const key = message.key;
-  const candidatos = [key.participantAlt, key.participant];
-  for (const id of candidatos) {
-    if (!id) continue;
-    if (id.endsWith('@g.us')) continue;
-    if (id.endsWith('@lid')) continue;
-    if (id.endsWith('@s.whatsapp.net')) return id;
+
+  // Tenta participantAlt primeiro (número real quando @lid está ativo)
+  if (key.participantAlt && key.participantAlt.endsWith('@s.whatsapp.net')) {
+    return key.participantAlt;
   }
-  return key.participant || null;
+
+  // Tenta participant normal
+  if (key.participant && key.participant.endsWith('@s.whatsapp.net')) {
+    return key.participant;
+  }
+
+  // Se participant for @lid, usa participantAlt mesmo que não tenha @s.whatsapp.net
+  if (key.participantAlt && !key.participantAlt.endsWith('@lid')) {
+    return key.participantAlt;
+  }
+
+  return null;
 }
 
 // ============================================
@@ -271,7 +279,7 @@ export async function handleMessages(sock, message) {
     }
 
     // 🎨 Sticker
-    if (lowerContent.startsWith('#stickerdamas')) {
+    if (lowerContent.startsWith('#stk')) {
       await handleStickerCommand(sock, message);
       return;
     }
