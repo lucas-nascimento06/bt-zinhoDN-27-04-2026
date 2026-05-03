@@ -8,6 +8,7 @@ import { dirname, resolve } from 'path';
 // 👤 SISTEMA DE PERFIL - ESTILO TROLL COM BARRA DE PORCENTAGEM
 // Uso: #perfil          → exibe seu próprio perfil
 //      #perfil @nome    → exibe o perfil de @nome
+//      @nome #perfil    → exibe o perfil de @nome (também funciona!)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PERFIL_JSON_URL = 'https://raw.githubusercontent.com/lucas-nascimento06/perfil-integrantes-admins/refs/heads/main/perfil-frases.json';
@@ -24,6 +25,10 @@ const POSTER_URLS = [
     'https://i.ibb.co/kVYXT52C/9-copiar.png',
     'https://i.ibb.co/0yVVP69L/10-copiar.png',
 ];
+
+// ── SLEEP ────────────────────────────────────────────────────────────────────
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // ── CAMINHOS DE FONTE (resolvidos uma vez em tempo de importação) ─────────────
 
@@ -137,10 +142,6 @@ function sortearFrase(categoria) {
 }
 
 // ── MONTAR PERFIL ────────────────────────────────────────────────
-// CORREÇÃO LID: recebe `nomeExibicao` (o que aparece no texto) separado do
-// JID real (que fica apenas em mentions[]). Quando o contato é um LID, o
-// nomeExibicao é o apelido digitado pelo usuário (@maria), enquanto o JID
-// interno (12036340729997410@lid) vai só para o array de menções do Baileys.
 
 function montarPerfil(nomeExibicao) {
     garantirData();
@@ -186,7 +187,6 @@ async function gerarThumbnail(buffer, size = 256) {
     }
 }
 
-// ── CORREÇÃO: igual ao baixarImagemPoema do poemas que funciona ──────────────
 async function baixarImagemPoster() {
     const posterUrl = POSTER_URLS[Math.floor(Math.random() * POSTER_URLS.length)];
 
@@ -219,58 +219,89 @@ function resolverSenderId(message) {
     return key.participant || key.remoteJid;
 }
 
-// ── PARSEAR COMANDO ──────────────────────────────────────────────────────
+// ── HANDLER PRINCIPAL ──────────────────────────────────────────────────────
+// Usa a mesma lógica do golpeHandler:
+// MODO 1 → reply numa mensagem
+// MODO 2 → menção direta (@pessoa)
+// MODO 3 → sem alvo → gera perfil do próprio remetente
 
-function parsearComando(content, message) {
-    const semPrefixo = content.replace(/^#perfil\s*/i, '').trim();
-
-    const mentionedJids =
-        message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-
-    // Captura exatamente o que o usuário digitou após o @, ex: "maria" em "@maria"
-    const atMatch = semPrefixo.match(/@(\S+)/);
-    const nomeExibicao = atMatch
-        ? atMatch[1].replace(/\d+/g, '').trim() || null
-        : null;
-
-    return { mentionedJids, nomeExibicao };
-}
-
-// ── PROCESSAMENTO PRINCIPAL ──────────────────────────────────────────────
-
-async function processarPerfil(sock, from, senderId, mentionedJids, nomeExibicao, originalMessage) {
-    const numeroRemetente = senderId.split('@')[0];
-
-    // ── Resolver JID alvo (usado APENAS em mentions[]) ────────────────────
-    const jidAlvo = mentionedJids.length > 0 ? mentionedJids[0] : senderId;
-
-    // ── Resolver nome de exibição (usado APENAS no texto) ─────────────────
-    let nomeParaTexto;
-    if (nomeExibicao) {
-        nomeParaTexto = nomeExibicao;
-    } else if (mentionedJids.length > 0) {
-        const jidNum = jidAlvo.split('@')[0];
-        nomeParaTexto = jidNum;
-    } else {
-        nomeParaTexto = numeroRemetente;
-    }
-
-    const nomeQuemPediu = `@${numeroRemetente}`;
-
-    const mentionsFinais = jidAlvo === senderId
-        ? [senderId]
-        : [jidAlvo, senderId];
-
-    const replyContext = {
-        stanzaId:      originalMessage.key.id,
-        participant:   originalMessage.key.participant || originalMessage.key.remoteJid,
-        quotedMessage: originalMessage.message
-    };
-
+export async function perfilHandler(sock, message) {
     try {
-        console.log(`👤 [PERFIL] Gerando perfil para: ${nomeParaTexto} | JID: ${jidAlvo} | pedido por ${nomeQuemPediu}`);
+        console.log('🔍 [PERFIL] Handler iniciado');
 
-        const perfilCompleto = montarPerfil(nomeParaTexto);
+        const { key, message: msg } = message;
+        const from = key.remoteJid;
+
+        const contextInfo  = msg?.extendedTextMessage?.contextInfo;
+        const mentionedJid = contextInfo?.mentionedJid;
+
+        const senderId = resolverSenderId(message);
+
+        let jidAlvo = null;
+
+        // MODO 1: reply numa mensagem de alguém — igual ao golpeHandler
+        if (contextInfo?.participant) {
+            const quotedParticipant = contextInfo?.participantAlt || contextInfo?.participant;
+            if (quotedParticipant && contextInfo?.quotedMessage) {
+                jidAlvo = quotedParticipant;
+                console.log('🧪 [PERFIL] Modo: REPLY → jidAlvo:', jidAlvo);
+            }
+        }
+
+        // MODO 2: menção direta — @pessoa #perfil ou #perfil @pessoa
+        if (!jidAlvo && mentionedJid?.length > 0) {
+            jidAlvo = mentionedJid[0];
+            console.log('🧪 [PERFIL] Modo: MENÇÃO → jidAlvo:', jidAlvo);
+        }
+
+        // MODO 3: sem alvo → perfil do próprio remetente
+        if (!jidAlvo) {
+            jidAlvo = senderId;
+            console.log('🧪 [PERFIL] Modo: PRÓPRIO → jidAlvo:', jidAlvo);
+        }
+
+        const numeroExibicao = jidAlvo.split('@')[0];
+
+        const mentionsFinais = jidAlvo === senderId
+            ? [senderId]
+            : [jidAlvo, senderId];
+
+        const replyContext = {
+            stanzaId:      key.id,
+            participant:   key.participant || key.remoteJid,
+            quotedMessage: msg
+        };
+
+        console.log(`👤 [PERFIL] Gerando perfil para: ${numeroExibicao} | JID: ${jidAlvo}`);
+
+        // ⏳ MENSAGEM 1 — suspense inicial
+        await sock.sendMessage(
+            from,
+            { text: `⏳ _Só um momento... estou analisando @${numeroExibicao}..._`, mentions: [jidAlvo] },
+            { quoted: message }
+        );
+
+        await sleep(3000);
+
+        // ⏳ MENSAGEM 2 — mais suspense
+        await sock.sendMessage(
+            from,
+            { text: `🔍 _Vasculhando os dados... quase lá..._` },
+            { quoted: message }
+        );
+
+        await sleep(3000);
+
+        // ⏳ MENSAGEM 3 — suspense máximo
+        await sock.sendMessage(
+            from,
+            { text: `🧠 _Processando resultado final... prepare-se!_` },
+            { quoted: message }
+        );
+
+        await sleep(2000);
+
+        const perfilCompleto = montarPerfil(numeroExibicao);
 
         // ── Tentar enviar com poster + título ─────────────────────────────
         const posterBuffer = await baixarImagemPoster();
@@ -296,41 +327,19 @@ async function processarPerfil(sock, from, senderId, mentionedJids, nomeExibicao
         await sock.sendMessage(from, {
             text:     perfilCompleto,
             mentions: mentionsFinais,
-            quoted:   originalMessage
+            quoted:   message
         });
 
         console.log('✅ [PERFIL] Perfil enviado como texto!');
 
     } catch (err) {
         console.error('❌ [PERFIL] Erro:', err.message);
-
+        const from = message.key.remoteJid;
         await sock.sendMessage(from, {
-            text:     `${nomeQuemPediu}\n\n❌ Não consegui gerar o perfil de @${nomeParaTexto}. Tente novamente.`,
-            mentions: [senderId, jidAlvo],
-            quoted:   originalMessage
+            text:   `❌ Erro ao gerar perfil: ${err.message}`,
+            quoted: message
         });
     }
-}
-
-// ── HANDLERS EXPORTADOS ──────────────────────────────────────────────────
-
-export async function perfilHandler(sock, message) {
-    const from    = message.key.remoteJid;
-    const content =
-        message.message?.conversation ||
-        message.message?.extendedTextMessage?.text || '';
-
-    const { mentionedJids, nomeExibicao } = parsearComando(content, message);
-    const senderId = resolverSenderId(message);
-
-    console.log(`👤 [PERFIL] senderId resolvido: ${senderId}`);
-    console.log(`👤 [PERFIL] nomeExibicao: ${nomeExibicao} | mentionedJids: ${mentionedJids}`);
-
-    await processarPerfil(
-        sock, from, senderId,
-        mentionedJids, nomeExibicao,
-        message
-    );
 }
 
 export async function atualizarPerfilHandler(sock, message) {
@@ -338,24 +347,24 @@ export async function atualizarPerfilHandler(sock, message) {
     const senderId = resolverSenderId(message);
 
     await sock.sendMessage(from, {
-        text:    '🔄 Recarregando dados de perfil do GitHub...',
+        text:     '🔄 Recarregando dados de perfil do GitHub...',
         mentions: [senderId],
-        quoted:  message
+        quoted:   message
     });
 
     try {
         await carregarPerfilData();
         await sock.sendMessage(from, {
-            text:    `✅ Dados atualizados!\n📊 Carregado com sucesso.`,
+            text:     `✅ Dados atualizados!\n📊 Carregado com sucesso.`,
             mentions: [senderId],
-            quoted:  message
+            quoted:   message
         });
         console.log('✅ [RELOAD PERFIL] Dados recarregados via comando.');
     } catch (err) {
         await sock.sendMessage(from, {
-            text:    `❌ Erro ao recarregar dados: ${err.message}`,
+            text:     `❌ Erro ao recarregar dados: ${err.message}`,
             mentions: [senderId],
-            quoted:  message
+            quoted:   message
         });
         console.error('❌ [RELOAD PERFIL] Falha:', err.message);
     }

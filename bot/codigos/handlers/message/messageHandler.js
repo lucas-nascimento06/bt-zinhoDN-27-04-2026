@@ -21,7 +21,8 @@ import { handleBanMessage } from '../../moderation/banHandler.js';
 import { handleNotCommand } from '../command/notCommandHandler.js';
 import { handleChamarCommand } from '../command/chamarHandler.js';
 import { golpeHandler } from '../command/golpeHandler.js';
-import { perfilHandler } from "../command/perfilHandler.js";
+// ✅ CORRIGIDO: importar atualizarPerfilHandler também
+import { perfilHandler, atualizarPerfilHandler } from "../command/perfilHandler.js";
 import {
     handleBomDia,
     handleBoaTarde,
@@ -238,9 +239,9 @@ export async function handleMessages(sock, message) {
     }
 
     // ============================================
-    // 💘 GOLPE — ✅ CORRIGIDO: startsWith em vez de ===
+    // 💘 GOLPE — includes para pegar @mari #golpe também
     // ============================================
-    if (lowerContent.startsWith('#golpe')) {
+    if (lowerContent.includes('#golpe')) {
       if (DEBUG_MODE) console.log('💘 Comando #golpe detectado!');
       await golpeHandler(sock, message, from);
       return;
@@ -332,17 +333,20 @@ export async function handleMessages(sock, message) {
         return;
       }
     }
-    
+
     // ============================================
-    // 🎭 PERFIL — gera perfil aleatório do usuário
+    // 🎭 PERFIL — inclui #perfil em QUALQUER posição
+    // Cobre: "#perfil @mari", "@mari #perfil", "#perfil" sozinho
     // ============================================
-    if (lowerContent.startsWith('#perfil')) {
+    if (lowerContent.includes('#perfil')) {
+      if (DEBUG_MODE) console.log('🎭 Comando #perfil detectado!');
       await perfilHandler(sock, message);
       return;
     }
 
     // 🔄 Atualiza cache dos templates de perfil
     if (lowerContent === '#atualizarperfil') {
+      if (DEBUG_MODE) console.log('🔄 Comando #atualizarperfil detectado!');
       await atualizarPerfilHandler(sock, message);
       return;
     }
@@ -355,25 +359,25 @@ export async function handleMessages(sock, message) {
       await handleBomDia(sock, message, [], from);
       return;
     }
- 
+
     if (lowerContent === '#boatarde' || lowerContent === '#bt') {
       if (DEBUG_MODE) console.log('🌇 Comando #boatarde detectado!');
       await handleBoaTarde(sock, message, [], from);
       return;
     }
- 
+
     if (lowerContent === '#boanoite' || lowerContent === '#bn') {
       if (DEBUG_MODE) console.log('🌃 Comando #boanoite detectado!');
       await handleBoaNoite(sock, message, [], from);
       return;
     }
- 
+
     if (lowerContent === '#atualizarsaudacoes') {
       if (DEBUG_MODE) console.log('🔄 Comando #atualizarsaudacoes detectado!');
       await handleAtualizarSaudacoes(sock, message, [], from);
       return;
     }
-  
+
     // 💌 CONFISSÕES (grupo)
     if (from.endsWith('@g.us')) {
       if (lowerContent === '#avisarconfissoes') {
