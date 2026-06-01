@@ -21,6 +21,7 @@ import { handleBanMessage } from '../../moderation/banHandler.js';
 import { handleNotCommand } from '../command/notCommandHandler.js';
 import { handleChamarCommand } from '../command/chamarHandler.js';
 import { golpeHandler } from '../command/golpeHandler.js';
+import { handleSalvaContato, handleListarContatos } from '../command/contatoHandler.js';
 import { perfilHandler, atualizarPerfilHandler } from "../command/perfilHandler.js";
 import {
     handleBomDia,
@@ -34,15 +35,15 @@ import {
 import { ativosHandler, inativosHandler } from '../command/ativosHandler.js';
 import { rankdamasHandler } from '../command/rankdamasHandler.js';
 import { rainhaHandler } from '../command/rainhaHandler.js';
-import { registrarMensagem } from '../../utils/rainhaModel.js';
+import { trackMensagem } from '../../features/mensagensTracker.js';
 
 const autoTag = new AutoTagHandler();
 const replyTag = new ReplyTagHandler();
 
-const OWNER_NUMBERS = ['5516981874405', '5521972337640'];
+const OWNER_NUMBERS = ['555195201826', '5521972337640'];
 const DEBUG_MODE = process.env.DEBUG === 'true';
 
-const GRUPO_PRINCIPAL = '120363419322682521@g.us';
+const GRUPO_PRINCIPAL = '120363414543392978@g.us';
 
 const MEDIA_TYPES = [
   'imageMessage',
@@ -161,20 +162,22 @@ export async function handleMessages(sock, message) {
     // ============================================
     // 📝 REGISTRAR MENSAGEM (apenas no grupo principal)
     // ============================================
-    if (
-      from === GRUPO_PRINCIPAL &&
-      !message.key.fromMe &&
-      (content?.trim() || isMediaMessage)
-    ) {
-      const pushName = message.pushName || userId.split('@')[0];
-      const rawId    = resolverRemetenteReal(message);
-
-      if (rawId && !rawId.endsWith('@g.us')) {
-        registrarMensagem(from, rawId, pushName).catch(err =>
-          console.error('❌ [rainhaModel] registrarMensagem:', err.message)
-        );
-      }
+   if (from === GRUPO_PRINCIPAL && !message.key.fromMe) {
+        trackMensagem(sock, message).catch(err =>
+        console.error('❌ [mensagensTracker] trackMensagem:', err.message)
+       );
     }
+
+ // 💾 #salva / #s e #contato / #c
+   if (lowerContent.startsWith('#salva') || lowerContent.startsWith('#s ')) {
+       await handleSalvaContato(sock, message);
+       return;
+  }
+
+   if (lowerContent === '#contato' || lowerContent === '#contatos' || lowerContent === '#c') {
+  await handleListarContatos(sock, message);
+  return;
+   }
 
     // ============================================
     // 👑 MENU OWNER

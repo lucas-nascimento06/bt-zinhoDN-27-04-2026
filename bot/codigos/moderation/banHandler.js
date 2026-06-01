@@ -2,7 +2,7 @@
 
 import { addToBlacklist } from '../moderation/blacklist/blacklistFunctions.js';
 
-const GRUPO_PRINCIPAL = '120363419322682521@g.us';
+const GRUPO_PRINCIPAL = '120363414543392978@g.us';
 const GRUPO_ADMINS    = '120363421857537823@g.us';
 
 export async function handleBanMessage(c, message) {

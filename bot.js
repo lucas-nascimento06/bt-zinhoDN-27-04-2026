@@ -2,6 +2,7 @@
 import 'dotenv/config';
 import { connectToWhatsApp } from './bot/bot-connection/whatsappConnection.js';
 import { criarTabelaInfracoes } from './bot/codigos/handlers/command/notCommandHandler.js';
+import { initContatosDB } from './bot/codigos/handlers/command/contatoHandler.js';
 
 console.clear();
 console.log("🌙 =======================================");
@@ -27,4 +28,5 @@ process.on('uncaughtException', (error) => {
 
 // Inicia tabelas e conexão
 await criarTabelaInfracoes();
+await initContatosDB();
 connectToWhatsApp();
